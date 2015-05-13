@@ -10,7 +10,7 @@ RUN curl -sSL -o /usr/local/bin/etcdctl https://s3-us-west-2.amazonaws.com/opdem
     && chmod +x /usr/local/bin/etcdctl
 
 # install confd
-RUN curl -sSL -o /usr/local/bin/confd https://github.com/kelseyhightower/confd/releases/download/v0.8.0/confd-0.8.0-linux-amd64 \
+RUN curl -sSL -o /usr/local/bin/confd https://github.com/kelseyhightower/confd/releases/download/v0.9.0/confd-0.9.0-linux-amd64 \
     && chmod +x /usr/local/bin/confd
 
 # install docker-in-docker
@@ -38,11 +38,6 @@ RUN useradd -d $GITHOME $GITUSER
 RUN mkdir -p $GITHOME/.ssh && chown git:git $GITHOME/.ssh
 RUN chown -R $GITUSER:$GITUSER $GITHOME
 
-# HACK: import progrium/cedarish as a tarball
-# see https://github.com/deis/deis/issues/1027
-RUN curl -#SL -o /progrium_cedarish.tar.gz \
-    https://github.com/progrium/cedarish/releases/download/v3/cedarish-cedar14_v3.tar.gz
-
 # define the execution environment
 # use VOLUME to remove /var/lib/docker from copy-on-write for performance
 # we don't want to stack overlay filesystems
@@ -63,4 +58,4 @@ ADD etc /etc
 ADD . /app
 RUN chown -R root:root /app
 
-ENV DEIS_RELEASE 1.6.0-dev
+ENV DEIS_RELEASE 1.6.0

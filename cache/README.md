@@ -20,13 +20,11 @@ install, and start **deis/cache**.
   daemon (default: *4001*)
 * **ETCD_PATH** sets the etcd directory where the cache announces its
   configuration (default: */deis/cache*)
-* **ETCD_TTL** sets the time-to-live before etcd purges a configuration
-  value, in seconds (default: *10*)
 * **PORT** sets the TCP port on which the cache listens (default: *6379*)
 
 ## License
 
-© 2014 OpDemand LLC
+© 2014 Engine Yard, Inc.
 
 Licensed under the Apache License, Version 2.0 (the "License"); you may
 not use this file except in compliance with the License. You may obtain

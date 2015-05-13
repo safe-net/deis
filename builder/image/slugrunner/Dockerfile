@@ -1,5 +1,4 @@
-FROM progrium/cedarish:latest
-MAINTAINER OpDemand <info@opdemand.com>
+FROM heroku/cedar:14
 
 RUN mkdir /app
 RUN addgroup --quiet --gid 2000 slug && \
@@ -18,5 +17,4 @@ USER slug
 ENV HOME /app
 ENTRYPOINT ["/runner/init"]
 
-ENV DEIS_RELEASE 1.6.0-dev
-
+ENV DEIS_RELEASE 1.6.0

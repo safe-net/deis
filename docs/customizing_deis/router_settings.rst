@@ -39,16 +39,16 @@ setting                                      description
 /deis/domains/*                              domain configuration for applications (set by controller)
 /deis/router/affinityArg                     for requests with the indicated query string variable, hash its contents to perform session affinity (default: undefined)
 /deis/router/bodySize                        nginx body size setting (default: 1m)
+/deis/router/defaultTimeout                  default timeout value in seconds. Should be greater then the frontfacing load balancers timeout value (default: 1300)
 /deis/router/builder/timeout/connect         proxy_connect_timeout for deis-builder (default: 10000). Unit in miliseconds
-/deis/router/builder/timeout/read            proxy_read_timeout for deis-builder (default: 1200000). Unit in miliseconds
-/deis/router/builder/timeout/send            proxy_send_timeout for deis-builder (default: 1200000). Unit in miliseconds
-/deis/router/builder/timeout/tcp             timeout for deis-builder (default: 1200000). Unit in miliseconds
+/deis/router/builder/timeout/tcp             proxy_timeout for deis-builder (default: 1200000). Unit in miliseconds
 /deis/router/controller/timeout/connect      proxy_connect_timeout for deis-controller (default: 10m)
 /deis/router/controller/timeout/read         proxy_read_timeout for deis-controller (default: 20m)
 /deis/router/controller/timeout/send         proxy_send_timeout for deis-controller (default: 20m)
 /deis/router/enforceHTTPS                    redirect all HTTP traffic to HTTPS (default: false)
 /deis/router/firewall/enabled                nginx naxsi firewall enabled (default: false)
 /deis/router/firewall/errorCode              nginx default firewall error code (default: 400)
+/deis/router/errorLogLevel                   nginx error_log level (default: error) Valid options: debug, info, notice, warn, error, crit, alert, emerg
 /deis/router/gzip                            nginx gzip setting (default: on)
 /deis/router/gzipCompLevel                   nginx gzipCompLevel setting (default: 5)
 /deis/router/gzipDisable                     nginx gzipDisable setting (default: "msie6")
@@ -65,6 +65,8 @@ setting                                      description
 /deis/router/sslCert                         cluster-wide SSL certificate
 /deis/router/sslKey                          cluster-wide SSL private key
 /deis/router/workerProcesses                 nginx number of worker processes to start (default: auto i.e. available CPU cores)
+/deis/router/proxyProtocol                   nginx PROXY protocol enabled
+/deis/router/proxyRealIpCidr                 nginx IP with CIDR used by the load balancer in front of deis-router (default: 10.0.0.0/8)
 /deis/services/*                             healthy application containers reported by deis/publisher
 /deis/store/gateway/host                     host of the store gateway component (set by store-gateway)
 /deis/store/gateway/port                     port of the store gateway component (set by store-gateway)
@@ -90,3 +92,22 @@ Be sure that your custom image functions in the same way as the `stock router im
 Deis. Specifically, ensure that it sets and reads appropriate etcd keys.
 
 .. _`stock router image`: https://github.com/deis/deis/tree/master/router
+
+PROXY Protocol
+---------------
+PROXY is a simple protocol supported by nginx, HAProxy, Amazon ELB, and others. It provides a method
+to obtain information about the original requests IP address sent to a load
+balancer in front of Deis :ref:`router`.
+
+The Protocol works by prepending, for example, the following to the request:
+
+.. code-block:: text
+
+	PROXY TCP4 129.164.129.164\r\n
+
+The :ref:`router` will pick up the IP information and forward it to the application in the
+``X-Forwarded-For`` header.
+
+Load Balancers supporting the HTTP protocol may not need this, except in cases where one would run
+WebSockets on a Load Balancer without support for WebSockets (for example AWS ELB) and one also
+wants to know the IP address of the original request.

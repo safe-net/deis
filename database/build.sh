@@ -32,14 +32,15 @@ apt-get update && apt-get install -yq \
 /etc/init.d/postgresql stop
 
 # install pip
-curl -sSL https://raw.githubusercontent.com/pypa/pip/6.0.8/contrib/get-pip.py | python -
+curl -sSL https://raw.githubusercontent.com/pypa/pip/6.1.1/contrib/get-pip.py | python -
 
 # install wal-e
 cd /tmp
 git clone https://github.com/wal-e/wal-e.git
 
+# get a post-v0.8.0 commit which includes a busybox fix
 cd /tmp/wal-e
-git checkout v0.8c2
+git checkout c6dd4b1
 
 pip install .
 

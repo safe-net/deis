@@ -1,5 +1,4 @@
-FROM progrium/cedarish:latest
-MAINTAINER OpDemand <info@opdemand.com>
+FROM heroku/cedar:14
 
 RUN mkdir /app
 RUN addgroup --quiet --gid 2000 slug && \
@@ -12,5 +11,4 @@ ADD ./builder/ /tmp/builder
 RUN /tmp/builder/install-buildpacks
 ENTRYPOINT ["/tmp/builder/build.sh"]
 
-ENV DEIS_RELEASE 1.6.0-dev
-
+ENV DEIS_RELEASE 1.6.0

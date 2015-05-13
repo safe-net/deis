@@ -14,7 +14,7 @@ export ETCD_PORT=${ETCD_PORT:-4001}
 export ETCD="$HOST:$ETCD_PORT"
 export ETCD_PATH=${ETCD_PATH:-/deis/registry}
 export HOST_ETCD_PATH=${HOST_ETCD_PATH:-/deis/registry/hosts/$HOST}
-export ETCD_TTL=${ETCD_TTL:-10}
+export ETCD_TTL=${ETCD_TTL:-20}
 
 # run.sh requires $REGISTRY_PORT
 export REGISTRY_PORT=${PORT:-5000}
@@ -45,13 +45,13 @@ etcd_set_default protocol http
 etcd_set_default bucketName ${BUCKET_NAME}
 
 # wait for confd to run once and install initial templates
-until confd -onetime -node $ETCD --confdir /app --interval 5 --quiet >/dev/null 2>&1 ; do
+until confd -onetime -node $ETCD --confdir /app --log-level error; do
 	echo "registry: waiting for confd to write initial templates..."
 	sleep $(($ETCD_TTL/2))  # sleep for half the TTL
 done
 
 # ensure registry bucket exists
-/app/bin/create_bucket ${BUCKET_NAME}
+/app/bin/create_bucket
 
 # spawn the service in the background
 cd /docker-registry
@@ -67,7 +67,7 @@ function on_exit() {
 trap on_exit INT TERM
 
 # spawn confd in the background to update services based on etcd changes
-confd -node $ETCD --confdir /app --interval 5 --quiet --watch &
+confd -node $ETCD --confdir /app --log-level error --interval 5 &
 CONFD_PID=$!
 
 echo deis-registry running...

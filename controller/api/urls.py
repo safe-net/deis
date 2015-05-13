@@ -26,6 +26,13 @@ urlpatterns = patterns(
     url(r'^apps/(?P<id>{})/releases/?'.format(settings.APP_URL_REGEX),
         views.ReleaseViewSet.as_view({'get': 'list'})),
     # application infrastructure
+    url(r'^apps/(?P<id>{})/containers/restart/?'.format(settings.APP_URL_REGEX),
+        views.ContainerViewSet.as_view({'post': 'restart'})),
+    url(r'^apps/(?P<id>{})/containers/(?P<type>[-_\w.]+)/restart/?'.format(settings.APP_URL_REGEX),
+        views.ContainerViewSet.as_view({'post': 'restart'})),
+    url(r'^apps/(?P<id>{})/containers/(?P<type>[-_\w]+)/(?P<num>[-_\w]+)/restart/?'.format(
+        settings.APP_URL_REGEX),
+        views.ContainerViewSet.as_view({'post': 'restart'})),
     url(r'^apps/(?P<id>{})/containers/(?P<type>[-_\w]+)/(?P<num>[-_\w]+)/?'.format(
         settings.APP_URL_REGEX),
         views.ContainerViewSet.as_view({'get': 'retrieve'})),
@@ -82,8 +89,10 @@ urlpatterns = patterns(
         views.AdminPermsViewSet.as_view({'delete': 'destroy'})),
     url(r'^admin/perms/?',
         views.AdminPermsViewSet.as_view({'get': 'list', 'post': 'create'})),
-    url(r'^certs/(?P<common_name>[-_.\w]+)/?'.format(settings.APP_URL_REGEX),
+    url(r'^certs/(?P<common_name>[-_*.\w]+)/?'.format(settings.APP_URL_REGEX),
         views.CertificateViewSet.as_view({'get': 'retrieve', 'delete': 'destroy'})),
     url(r'^certs/?',
         views.CertificateViewSet.as_view({'get': 'list', 'post': 'create'})),
+    # list users
+    url(r'^users/', views.UserView.as_view({'get': 'list'})),
 )

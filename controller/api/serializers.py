@@ -17,7 +17,7 @@ from api import models
 
 
 PROCTYPE_MATCH = re.compile(r'^(?P<type>[a-z]+)')
-MEMLIMIT_MATCH = re.compile(r'^(?P<mem>[0-9]+[BbKkMmGg])$')
+MEMLIMIT_MATCH = re.compile(r'^(?P<mem>[0-9]+(MB|KB|GB|[BKMG]))$', re.IGNORECASE)
 CPUSHARE_MATCH = re.compile(r'^(?P<cpu>[0-9]+)$')
 TAGKEY_MATCH = re.compile(r'^[a-z]+$')
 TAGVAL_MATCH = re.compile(r'^\w+$')
@@ -215,6 +215,7 @@ class KeySerializer(ModelSerializer):
     """Serialize a :class:`~api.models.Key` model."""
 
     owner = serializers.ReadOnlyField(source='owner.username')
+    fingerprint = serializers.CharField(read_only=True)
     created = serializers.DateTimeField(format=settings.DEIS_DATETIME_FORMAT, read_only=True)
     updated = serializers.DateTimeField(format=settings.DEIS_DATETIME_FORMAT, read_only=True)
 
@@ -274,8 +275,9 @@ class CertificateSerializer(ModelSerializer):
         """Metadata options for a DomainCertSerializer."""
         model = models.Certificate
         extra_kwargs = {'certificate': {'write_only': True},
-                        'key': {'write_only': True}}
-        read_only_fields = ['common_name', 'expires', 'created', 'updated']
+                        'key': {'write_only': True},
+                        'common_name': {'required': False}}
+        read_only_fields = ['expires', 'created', 'updated']
 
 
 class PushSerializer(ModelSerializer):

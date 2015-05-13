@@ -14,7 +14,7 @@ import os
 import re
 import subprocess
 import time
-import threading
+from threading import Thread
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -84,9 +84,8 @@ def validate_id_is_docker_compatible(value):
 def validate_app_structure(value):
     """Error if the dict values aren't ints >= 0."""
     try:
-        for k, v in value.iteritems():
-            if int(v) < 0:
-                raise ValueError("Must be greater than or equal to zero")
+        if any(int(v) < 0 for v in value.itervalues()):
+            raise ValueError("Must be greater than or equal to zero")
     except ValueError, err:
         raise ValidationError(err)
 
@@ -198,6 +197,15 @@ class App(UuidAuditedModel):
         self._clean_app_logs()
         return super(App, self).delete(*args, **kwargs)
 
+    def restart(self, **kwargs):
+        to_restart = self.container_set.all()
+        if kwargs.get('type'):
+            to_restart = to_restart.filter(type=kwargs.get('type'))
+        if kwargs.get('num'):
+            to_restart = to_restart.filter(num=kwargs.get('num'))
+        self._restart_containers(to_restart)
+        return to_restart
+
     def _clean_app_logs(self):
         """Delete application logs stored by the logger component"""
         path = os.path.join(settings.DEIS_LOG_DIR, self.id + '.log')
@@ -262,17 +270,13 @@ class App(UuidAuditedModel):
 
     def _start_containers(self, to_add):
         """Creates and starts containers via the scheduler"""
-        create_threads = []
-        start_threads = []
         if not to_add:
-            # do nothing if we didn't request any containers
             return
-        for c in to_add:
-            create_threads.append(threading.Thread(target=c.create))
-            start_threads.append(threading.Thread(target=c.start))
+        create_threads = [Thread(target=c.create) for c in to_add]
+        start_threads = [Thread(target=c.start) for c in to_add]
         [t.start() for t in create_threads]
         [t.join() for t in create_threads]
-        if set([c.state for c in to_add]) != set(['created']):
+        if any(c.state != 'created' for c in to_add):
             err = 'aborting, failed to create some containers'
             log_event(self, err, logging.ERROR)
             raise RuntimeError(err)
@@ -282,18 +286,32 @@ class App(UuidAuditedModel):
             err = 'warning, some containers failed to start'
             log_event(self, err, logging.WARNING)
 
+    def _restart_containers(self, to_restart):
+        """Restarts containers via the scheduler"""
+        if not to_restart:
+            return
+        stop_threads = [Thread(target=c.stop) for c in to_restart]
+        start_threads = [Thread(target=c.start) for c in to_restart]
+        [t.start() for t in stop_threads]
+        [t.join() for t in stop_threads]
+        if any(c.state != 'created' for c in to_restart):
+            err = 'warning, some containers failed to stop'
+            log_event(self, err, logging.WARNING)
+        [t.start() for t in start_threads]
+        [t.join() for t in start_threads]
+        if any(c.state != 'up' for c in to_restart):
+            err = 'warning, some containers failed to start'
+            log_event(self, err, logging.WARNING)
+
     def _destroy_containers(self, to_destroy):
         """Destroys containers via the scheduler"""
-        destroy_threads = []
         if not to_destroy:
-            # do nothing if we didn't request any containers
             return
-        for c in to_destroy:
-            destroy_threads.append(threading.Thread(target=c.destroy))
+        destroy_threads = [Thread(target=c.destroy) for c in to_destroy]
         [t.start() for t in destroy_threads]
         [t.join() for t in destroy_threads]
         [c.delete() for c in to_destroy if c.state == 'destroyed']
-        if set([c.state for c in to_destroy]) != set(['destroyed']):
+        if any(c.state != 'destroyed' for c in to_destroy):
             err = 'aborting, failed to destroy some containers'
             log_event(self, err, logging.ERROR)
             raise RuntimeError(err)
@@ -337,12 +355,12 @@ class App(UuidAuditedModel):
 
         self.scale(user, structure)
 
-    def logs(self):
+    def logs(self, log_lines):
         """Return aggregated log data for this application."""
         path = os.path.join(settings.DEIS_LOG_DIR, self.id + '.log')
         if not os.path.exists(path):
             raise EnvironmentError('Could not locate logs')
-        data = subprocess.check_output(['tail', '-n', str(settings.LOG_LINES), path])
+        data = subprocess.check_output(['tail', '-n', log_lines, path])
         return data
 
     def run(self, user, command):
@@ -873,13 +891,18 @@ class Key(UuidAuditedModel):
     owner = models.ForeignKey(settings.AUTH_USER_MODEL)
     id = models.CharField(max_length=128)
     public = models.TextField(unique=True, validators=[validate_base64])
+    fingerprint = models.CharField(max_length=128)
 
     class Meta:
         verbose_name = 'SSH Key'
-        unique_together = (('owner', 'id'))
+        unique_together = (('owner', 'fingerprint'))
 
     def __str__(self):
         return "{}...{}".format(self.public[:18], self.public[-31:])
+
+    def save(self, *args, **kwargs):
+        self.fingerprint = fingerprint(self.public)
+        return super(Key, self).save(*args, **kwargs)
 
 
 # define update/delete callbacks for synchronizing
@@ -993,7 +1016,7 @@ def _etcd_publish_domains(**kwargs):
 def _etcd_purge_domains(**kwargs):
     domain = kwargs['instance']
     try:
-        _etcd_client.delete('/deis/certs/{}'.format(domain),
+        _etcd_client.delete('/deis/domains/{}'.format(domain),
                             prevExist=True, dir=True, recursive=True)
     except KeyError:
         pass

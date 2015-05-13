@@ -27,12 +27,17 @@ else:
     KWARGS = {'scripts': ['deis']}
 
 
+with open('requirements.txt') as f:
+    required = f.read().splitlines()
+    required = [r for r in required if r.strip() and not r.startswith('#')]
+
+
 setup(name='deis',
-      version='1.6.0-dev',
+      version='1.6.0',
       license=APACHE_LICENSE,
       description='Command-line Client for Deis, the open PaaS',
-      author='OpDemand',
-      author_email='info@opdemand.com',
+      author='Engine Yard',
+      author_email='info@deis.io',
       url='https://github.com/deis/deis',
       keywords=[
           'opdemand', 'deis', 'paas', 'cloud', 'coreos', 'docker', 'heroku',
@@ -56,10 +61,6 @@ setup(name='deis',
           ('.', ['README.rst']),
       ],
       long_description=LONG_DESCRIPTION,
-      install_requires=[
-          'docopt==0.6.2', 'python-dateutil==2.4.2',
-          'PyYAML==3.11', 'requests==2.5.1',
-          'tabulate==0.7.4', 'termcolor==1.1.0'
-      ],
+      install_requires=required,
       zip_safe=True,
       **KWARGS)

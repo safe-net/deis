@@ -25,6 +25,7 @@ Subcommands, use ``deis help [subcommand]`` to learn more::
   keys          manage ssh keys used for `git push` deployments
   perms         manage permissions for applications
   git           manage git for applications
+  users         manage users
 
 Shortcut commands, use ``deis shortcuts`` to see all::
 
@@ -71,14 +72,16 @@ from docopt import DocoptExit
 import requests
 from tabulate import tabulate
 from termcolor import colored
+import urllib3.contrib.pyopenssl
 
-__version__ = '1.6.0-dev'
+__version__ = '1.6.0'
 
 # what version of the API is this client compatible with?
-__api_version__ = '1.2'
+__api_version__ = '1.3'
 
 
 locale.setlocale(locale.LC_ALL, '')
+urllib3.contrib.pyopenssl.inject_into_urllib3()
 
 
 class Session(requests.Session):
@@ -632,12 +635,20 @@ Make sure that the Controller URI is correct and the server is running.
         Options:
           -a --app=<app>
             the uniquely identifiable name for the application.
+          -n --lines=<lines>
+            the number of lines to display
         """
         app = args.get('--app')
         if not app:
             app = self._session.app
-        response = self._dispatch('get',
-                                  "/v1/apps/{}/logs".format(app))
+
+        url = "/v1/apps/{}/logs".format(app)
+
+        log_lines = args.get('--lines')
+        if log_lines:
+            url += "?log_lines={}".format(log_lines)
+
+        response = self._dispatch('get', url)
         if response.status_code == requests.codes.ok:
             # strip the last newline character
             for line in response.json().split('\n')[:-1]:
@@ -755,8 +766,14 @@ Make sure that the Controller URI is correct and the server is running.
             email = raw_input('email: ')
         url = urlparse.urljoin(controller, '/v1/auth/register')
         payload = {'username': username, 'password': password, 'email': email}
+        headers = {}
+
+        token = self._settings.get('token')
+        if token:
+            headers.update({'Authorization': 'token {}'.format(token)})
+
         response = self._session.post(url, data=payload, allow_redirects=False,
-                                      verify=ssl_verify)
+                                      verify=ssl_verify, headers=headers)
         if response.status_code == requests.codes.created:
             self._settings['controller'] = controller
             self._settings.save()
@@ -1026,18 +1043,36 @@ Make sure that the Controller URI is correct and the server is running.
         """
         Binds a certificate/key pair to an application.
 
-        Usage: deis certs:add <cert> <key>
+        Usage: deis certs:add <cert> <key> [options]
 
         Arguments:
           <cert>
             The public key of the SSL certificate.
           <key>
             The private key of the SSL certificate.
+
+        Options:
+          --common-name=<cname>
+            The common name of the certificate. If none is provided, the controller will
+            interpret the common name from the certificate.
+          --subject-alt-names=<sans>
+            The subject alternate names (SAN) of the certificate, separated by commas. This will
+            create multiple Certificate objects in the controller, one for each SAN.
         """
         cert = args.get('<cert>')
         key = args.get('<key>')
+        self._certs_add(cert, key, args.get('--common-name'))
+        sans = args.get('--subject-alt-names')
+        if sans:
+            [self._certs_add(cert, key, san) for san in sans.split(',')]
+
+    def _certs_add(self, cert, key, common_name=None):
         body = {'certificate': file(cert).read().strip(), 'key': file(key).read().strip()}
-        sys.stdout.write("Adding SSL endpoint... ")
+        if common_name:
+            body['common_name'] = common_name
+            sys.stdout.write("Adding SSL endpoint {}...".format(common_name))
+        else:
+            sys.stdout.write("Adding SSL endpoint... ")
         sys.stdout.flush()
         try:
             progress = TextProgress()
@@ -1049,7 +1084,8 @@ Make sure that the Controller URI is correct and the server is running.
         if response.status_code == requests.codes.created:
             self._logger.info("done")
             data = response.json()
-            self._logger.info("{common_name}".format(**data))
+            if not common_name:
+                self._logger.info("{common_name}".format(**data))
         else:
             raise ResponseError(response)
 
@@ -1175,6 +1211,7 @@ Make sure that the Controller URI is correct and the server is running.
         app = args.get('--app')
         if not app:
             app = self._session.app
+
         values = dictify(args['<var>=<value>'])
         if values.get('SSH_KEY'):
             if os.path.isfile(values.get('SSH_KEY')):
@@ -1320,24 +1357,27 @@ Make sure that the Controller URI is correct and the server is running.
         """
         Sets environment variables for an application.
 
-        Your environment is read from a file named .env. This file can be
-        read by foreman to load the local environment for your app.
+        The environment is read from <path>. This file can be read by foreman
+        to load the local environment for your app.
 
         Usage: deis config:push [options]
 
         Options:
           -a --app=<app>
             the uniquely identifiable name for the application.
+          -p <path>, --path=<path>
+            a path leading to an environment file [default: .env]
         """
         app = args.get('--app')
         if not app:
             app = self._session.app
+
         # read from .env
         try:
-            with open('.env', 'r') as f:
+            with open(args.get('--path'), 'r') as f:
                 self._config_set(app, dictify([line.strip() for line in f]))
         except IOError:
-            self._logger.error('could not read from local env')
+            self._logger.error('could not read env from ' + args.get('--path'))
             sys.exit(1)
 
     def domains(self, args):
@@ -1660,6 +1700,7 @@ Make sure that the Controller URI is correct and the server is running.
         Valid commands for processes:
 
         ps:list        list application processes
+        ps:restart     restart process types (e.g. web, worker)
         ps:scale       scale processes (e.g. web=4 worker=2)
 
         Use `deis help [command]` to learn more.
@@ -1696,6 +1737,53 @@ Make sure that the Controller URI is correct and the server is running.
             for c in c_map[c_type]:
                 self._logger.info("{type}.{num} {state} ({release})".format(**c))
             self._logger.info('')
+
+    def ps_restart(self, args):
+        """
+        Restarts an application's processes by type.
+
+        Usage: deis ps:restart [<type>] [options]
+
+        Arguments:
+          <type>
+            the process name as defined in your Procfile, such as 'web' or 'worker'.
+            To restart a particular process, use 'web.1'.
+
+        Options:
+          -a --app=<app>
+            the uniquely identifiable name for the application.
+        """
+        app = args.get('--app')
+        procname = args.get('<type>')
+        if not app:
+            app = self._session.app
+        restarting_cmd = 'Restarting processes... but first, {}!\n'.format(
+            os.environ.get('DEIS_DRINK_OF_CHOICE', 'coffee'))
+        sys.stdout.write(restarting_cmd)
+        sys.stdout.flush()
+        try:
+            progress = TextProgress()
+            progress.start()
+            before = time.time()
+            url = '/v1/apps/{}/containers/restart'.format(app)
+            if procname:
+                if '.' in procname:
+                    # format is web.2
+                    proctype, procnum = procname.split('.')
+                    url = '/v1/apps/{}/containers/{}/{}/restart'.format(app,
+                                                                        proctype,
+                                                                        procnum)
+                else:
+                    url = '/v1/apps/{}/containers/{}/restart'.format(app, procname)
+            response = self._dispatch('post', url)
+        finally:
+            progress.cancel()
+            progress.join()
+        if response.status_code == requests.codes.ok:
+            self._logger.info('done in {}s'.format(int(time.time() - before)))
+            self.ps_list({}, app)
+        else:
+            raise ResponseError(response)
 
     def ps_scale(self, args):
         """
@@ -2165,7 +2253,7 @@ Make sure that the Controller URI is correct and the server is running.
             data = response.json()
             for item in data['results']:
                 item['created'] = readable_datetime(item['created'])
-                self._logger.info("v{version:<6} {created:<24} {summary}".format(**item))
+                self._logger.info("v{version:<6} {created:<28} {summary}".format(**item))
         else:
             raise ResponseError(response)
 
@@ -2223,6 +2311,35 @@ Make sure that the Controller URI is correct and the server is running.
             if ':' not in shortcut:
                 self._logger.info("{:<10} -> {}".format(shortcut, command))
         self._logger.info('\nUse `deis help [command]` to learn more')
+
+    def users(self, args):
+        """
+        Valid commands for users:
+
+        users:list        list all registered users
+
+        Use `deis help [command]` to learn more.
+        """
+        sys.argv[1] = 'users:list'
+        args = docopt(self.users_list.__doc__)
+        return self.users_list(args)
+
+    def users_list(self, args):
+        """
+        Lists all registered users.
+        Requires admin privilages.
+
+        Usage: deis users:list
+        """
+        response = self._dispatch('get', '/v1/users/')
+        if response.status_code == requests.codes.ok:
+            data = response.json()
+            self._logger.info('=== Users')
+            for item in data['results']:
+                self._logger.info('{username}'.format(**item))
+        else:
+            raise ResponseError(response)
+
 
 SHORTCUTS = OrderedDict([
     ('create', 'apps:create'),
